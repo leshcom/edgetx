@@ -1,0 +1,49 @@
+---
+# Fork-only workflow: build RadioMaster TX16S firmware for feature branches.
+name: Build TX16S firmware
+on:
+  push:
+    branches:
+      - 'usb-rc-out'
+      - 'feature/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - tx16s
+    container:
+      image: ghcr.io/edgetx/edgetx-dev:latest
+      volumes:
+        - ${{ github.workspace }}:/src
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Fetch build dependencies
+        uses: ./.github/actions/fetch_deps
+
+      - name: Build ${{ matrix.target }}
+        env:
+          FLAVOR: ${{ matrix.target }}
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
+        run: ./tools/build-gh.sh
+
+      - name: Upload ${{ matrix.target }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ matrix.target }}-${{ github.sha }}
+          path: |
+            fw.json
+            *.bin
+            *.uf2
+          retention-days: 30
+          if-no-files-found: error
