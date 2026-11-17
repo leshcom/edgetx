@@ -527,6 +527,7 @@ set(SRC
   input_mapping.cpp
   inactivity_timer.cpp
   tasks/mixer_task.cpp
+  usb_rc_out.cpp
   )
 
 if(GUI)

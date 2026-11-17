@@ -195,6 +195,7 @@ void usbStart()
       USBD_RegisterClass(&hUsbDevice, &USBD_HID);
       break;
 #if defined(USB_SERIAL)
+    case USB_RC_OUT_MODE:
     case USB_SERIAL_MODE:
       // initialize USB as CDC device (virtual serial port)
       USBD_RegisterClass(&hUsbDevice, &USBD_CDC);

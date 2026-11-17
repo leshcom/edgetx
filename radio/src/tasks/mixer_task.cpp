@@ -28,6 +28,7 @@
 #include "edgetx.h"
 #include "switches.h"
 #include "hal/usb_driver.h"
+#include "usb_rc_out.h"
 
 #include "hal/watchdog_driver.h"
 
@@ -200,6 +201,8 @@ void mixerTask()
 #if defined(STM32) && !defined(SIMU)
       if (getSelectedUsbMode() == USB_JOYSTICK_MODE) {
         usbJoystickUpdate();
+      } else if (getSelectedUsbMode() == USB_RC_OUT_MODE) {
+        usbRcOutUpdate();
       }
 #endif
 

@@ -27,6 +27,7 @@
 
 #include "edgetx.h"
 #include "lua/lua_states.h"
+#include "usb_rc_out.h"
 
 #if defined(COLORLCD)
 #include "view_main.h"
@@ -101,6 +102,10 @@ void openUsbMenu()
     TRACE("USB serial");
     setSelectedUsbMode(USB_SERIAL_MODE);
   });
+  _usbMenu->addLine(STR_USB_RC_OUT, [] {
+    TRACE("USB RC OUT");
+    setSelectedUsbMode(USB_RC_OUT_MODE);
+  });
 #endif
 }
 
@@ -117,6 +122,9 @@ void onUSBConnectMenu(const char *result)
   else if (result == STR_USB_SERIAL) {
     setSelectedUsbMode(USB_SERIAL_MODE);
   }
+  else if (result == STR_USB_RC_OUT) {
+    setSelectedUsbMode(USB_RC_OUT_MODE);
+  }
 #endif
   else if (result == STR_EXIT) {
     _usbDisabled = true;
@@ -128,7 +136,7 @@ void openUsbMenu()
   if (popupMenuHandler != onUSBConnectMenu) {
     POPUP_MENU_TITLE(STR_SELECT_MODE);
 #if defined(USB_SERIAL)
-    POPUP_MENU_START(onUSBConnectMenu, 3, STR_USB_JOYSTICK, STR_USB_MASS_STORAGE, STR_USB_SERIAL);
+    POPUP_MENU_START(onUSBConnectMenu, 4, STR_USB_JOYSTICK, STR_USB_MASS_STORAGE, STR_USB_SERIAL, STR_USB_RC_OUT);
 #else
     POPUP_MENU_START(onUSBConnectMenu, 2, STR_USB_JOYSTICK, STR_USB_MASS_STORAGE);
 #endif
@@ -221,6 +229,9 @@ void handleUsbConnection()
       else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
         serialInit(SP_VCP, serialGetMode(SP_VCP));
       }
+      else if (getSelectedUsbMode() == USB_RC_OUT_MODE) {
+        usbRcOutStart();
+      }
 #endif
 
       usbStart();
@@ -251,6 +262,8 @@ void handleUsbConnection()
 #endif
     } else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
       serialStop(SP_VCP);
+    } else if (getSelectedUsbMode() == USB_RC_OUT_MODE) {
+      usbRcOutStop();
     }
     TRACE("reset selected USB mode");
     setSelectedUsbMode(USB_UNSELECTED_MODE);

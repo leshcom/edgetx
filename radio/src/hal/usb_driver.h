@@ -34,6 +34,9 @@ enum usbMode {
   USB_MASS_STORAGE_MODE,
   USB_SERIAL_MODE,
   USB_DFU_MODE,
+  // Must stay after USB_MAX_MODE value so it can only be picked from the
+  // connection popup (not stored as radio/model default).
+  USB_RC_OUT_MODE,
 #if defined(USB_SERIAL)
   USB_MAX_MODE=USB_SERIAL_MODE,
 #else

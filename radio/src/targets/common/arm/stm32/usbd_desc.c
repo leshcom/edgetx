@@ -307,6 +307,7 @@ uint8_t * USBD_FS_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
       pid = USBD_HID_PID;
       break;
 
+    case USB_RC_OUT_MODE:
     case USB_SERIAL_MODE:
       vid = USBD_CDC_VID;
       pid = USBD_CDC_PID;
@@ -384,6 +385,7 @@ uint8_t * USBD_FS_ProductStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length
     case USB_JOYSTICK_MODE:
       USBD_GetString ((uint8_t*)USBD_HID_PRODUCT_FS_STRING, USBD_StrDesc, length);
       break;
+    case USB_RC_OUT_MODE:
     case USB_SERIAL_MODE:
       USBD_GetString ((uint8_t*)USBD_CDC_PRODUCT_FS_STRING, USBD_StrDesc, length);
       break;
@@ -446,6 +448,7 @@ uint8_t * USBD_FS_ConfigStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length)
     case USB_JOYSTICK_MODE:
       USBD_GetString ((uint8_t*)USBD_HID_CONFIGURATION_FS_STRING, USBD_StrDesc, length);
       break;
+    case USB_RC_OUT_MODE:
     case USB_SERIAL_MODE:
       USBD_GetString ((uint8_t*)USBD_CDC_CONFIGURATION_FS_STRING, USBD_StrDesc, length);
       break;
@@ -473,6 +476,7 @@ uint8_t * USBD_FS_InterfaceStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *leng
     case USB_JOYSTICK_MODE:
       USBD_GetString ((uint8_t*)USBD_HID_INTERFACE_FS_STRING, USBD_StrDesc, length);
       break;
+    case USB_RC_OUT_MODE:
     case USB_SERIAL_MODE:
       USBD_GetString ((uint8_t*)USBD_CDC_INTERFACE_FS_STRING, USBD_StrDesc, length);
       break;
