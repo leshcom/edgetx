@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-USB RC OUT monitor — перевірка потоку каналів з EdgeTX (режим "USB RC OUT").
+USB RC OUT monitor — перевірка потоку CRSF-каналів з EdgeTX (режим "USB RC OUT").
 
-Пакет, 39 байт:
-  A5 5A | ver=1 | seq | CH1..CH16 int16 LE | flags | CRC16-CCITT LE
-  CRC: poly 0x1021, init 0xFFFF, по байтах 0..36.
+Формат — стандартні кадри CRSF RC_CHANNELS_PACKED:
+  C8 18 16 | 22 байти: 16 каналів по 11 біт | CRC8 DVB-S2 (poly 0xD5) по [2..24]
+  мкс = v * 5 / 8 + 880  (172 → 987, 992 → 1500, 1811 → 2011)
 
 Використання:
   pip install pyserial
   python usb_rc_out_monitor.py            # автопошук порту (VID 0483 / PID 5740)
   python usb_rc_out_monitor.py COM7       # вказати порт вручну
-  python usb_rc_out_monitor.py --raw      # друкувати кожен пакет рядком (без "живого" екрана)
+  python usb_rc_out_monitor.py --raw      # друкувати кожен кадр рядком (без "живого" екрана)
+  python usb_rc_out_monitor.py --us       # показувати мікросекунди замість сирих значень CRSF
   python usb_rc_out_monitor.py --list     # показати всі COM-порти
 """
 
@@ -26,79 +27,90 @@ try:
 except ImportError:
     sys.exit("Потрібен pyserial:  pip install pyserial")
 
-MAGIC = b"\xA5\x5A"
-PACKET_SIZE = 39
+CRSF_SYNC = (0xC8, 0xEE, 0xEA, 0xEC)
+CRSF_TYPE_RC = 0x16
+CRSF_MAX_FRAME = 64
 CHANNELS = 16
-PROTO_VERSION = 1
 STM_VID, CDC_PID = 0x0483, 0x5740
-RANGE = 1536
+RANGE_LO, RANGE_HI = 172, 1811  # CRSF для ±1024 (≈988..2012 мкс)
 
 
-def crc16_ccitt(data: bytes) -> int:
-    crc = 0xFFFF
+def crc8_dvb_s2(data) -> int:
+    crc = 0
     for b in data:
-        crc ^= b << 8
+        crc ^= b
         for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
-            crc &= 0xFFFF
+            crc = ((crc << 1) ^ 0xD5) & 0xFF if crc & 0x80 else (crc << 1) & 0xFF
     return crc
 
 
+def crsf_to_us(v: int) -> int:
+    return (v * 5) // 8 + 880
+
+
+def unpack_channels(payload: bytes):
+    v = int.from_bytes(payload[:22], "little")
+    return [(v >> (11 * i)) & 0x7FF for i in range(CHANNELS)]
+
+
 class Parser:
-    """Шукає пакети в потоці байтів, рахує статистику."""
+    """Потоковий розбір CRSF — той самий алгоритм, що й у плагіні Mission Planner."""
 
     def __init__(self):
         self.buf = bytearray()
         self.ok = 0
+        self.other = 0          # валідні кадри CRSF інших типів
         self.crc_errors = 0
-        self.bad_version = 0
-        self.lost = 0
         self.resync_bytes = 0
-        self.last_seq = None
+        self._out = []
 
     def feed(self, data: bytes):
-        """Повертає список (seq, channels, flags) для кожного валідного пакета."""
-        self.buf += data
-        out = []
-        while True:
-            idx = self.buf.find(MAGIC)
-            if idx < 0:
-                # залишаємо останній байт — він може бути початком A5
-                keep = 1 if self.buf[-1:] == MAGIC[:1] else 0
-                self.resync_bytes += len(self.buf) - keep
-                del self.buf[: len(self.buf) - keep]
-                break
-            if idx > 0:
-                self.resync_bytes += idx
-                del self.buf[:idx]
-            if len(self.buf) < PACKET_SIZE:
-                break
+        """Повертає список (channels_crsf, frame_type) для кожного кадру RC_CHANNELS."""
+        self._out = []
+        for b in data:
+            self._push(b)
+        return self._out
 
-            pkt = bytes(self.buf[:PACKET_SIZE])
-            crc_rx = struct.unpack_from("<H", pkt, 37)[0]
-            if crc16_ccitt(pkt[:37]) != crc_rx:
-                # хибний заголовок або пошкоджений пакет — зсуваємось на 1 байт
-                self.crc_errors += 1
+    def _push(self, b):
+        buf = self.buf
+        if len(buf) == 0:
+            if b in CRSF_SYNC:
+                buf.append(b)
+            else:
                 self.resync_bytes += 1
-                del self.buf[:1]
-                continue
-
-            del self.buf[:PACKET_SIZE]
-            if pkt[2] != PROTO_VERSION:
-                self.bad_version += 1
-                continue
-
-            seq = pkt[3]
-            if self.last_seq is not None:
-                gap = (seq - self.last_seq - 1) & 0xFF
-                self.lost += gap
-            self.last_seq = seq
-
-            channels = struct.unpack_from("<16h", pkt, 4)
-            flags = pkt[36]
-            self.ok += 1
-            out.append((seq, channels, flags))
-        return out
+            return
+        if len(buf) == 1:
+            if b < 2 or b > CRSF_MAX_FRAME - 2:
+                self.resync_bytes += 1
+                buf.clear()
+                if b in CRSF_SYNC:
+                    buf.append(b)
+                return
+            buf.append(b)
+            return
+        buf.append(b)
+        frame_len = buf[1] + 2
+        if len(buf) < frame_len:
+            return
+        frame = bytes(buf)
+        buf.clear()
+        if crc8_dvb_s2(frame[2:frame_len - 1]) == frame[frame_len - 1]:
+            if frame[2] == CRSF_TYPE_RC and frame[1] == 24:
+                self.ok += 1
+                self._out.append((unpack_channels(frame[3:25]), frame[0]))
+            else:
+                self.other += 1
+        else:
+            self.crc_errors += 1
+            # шукаємо наступний sync-байт усередині відкинутого кадру
+            for i in range(1, frame_len):
+                if frame[i] in CRSF_SYNC:
+                    self.resync_bytes += i
+                    for x in frame[i:]:
+                        self._push(x)
+                    break
+            else:
+                self.resync_bytes += frame_len
 
 
 def find_port():
@@ -109,8 +121,8 @@ def find_port():
     return None
 
 
-def bar(value, width=32):
-    norm = (max(-RANGE, min(RANGE, value)) + RANGE) / (2 * RANGE)
+def bar(v, width=24):
+    norm = (max(RANGE_LO, min(RANGE_HI, v)) - RANGE_LO) / (RANGE_HI - RANGE_LO)
     pos = round(norm * width)
     center = width // 2
     cells = [" "] * width
@@ -121,25 +133,22 @@ def bar(value, width=32):
     return "[" + "".join(cells) + "]"
 
 
-def draw(port, parser, last, rate):
+def draw(port, parser, last, rate, as_us):
     lines = [
-        f"USB RC OUT monitor  —  {port}   (Ctrl+C — вихід)",
-        f"пакетів: {parser.ok}   частота: {rate:5.1f} Гц   "
-        f"втрачено (seq): {parser.lost}   CRC-помилок: {parser.crc_errors}   "
-        f"сміття байт: {parser.resync_bytes}",
+        f"USB RC OUT (CRSF) monitor  —  {port}   (Ctrl+C — вихід)",
+        f"кадрів RC: {parser.ok}   частота: {rate:5.1f} Гц   CRC-помилок: {parser.crc_errors}   "
+        f"інших кадрів: {parser.other}   сміття байт: {parser.resync_bytes}",
         "",
     ]
     if last is None:
-        lines.append("чекаю на пакети... (на пульті має бути вибрано USB RC OUT)")
+        lines.append("чекаю на кадри... (на пульті має бути вибрано USB RC OUT)")
     else:
-        seq, ch, flags = last
-        lines.append(f"seq={seq:3d}  flags=0x{flags:02X}")
+        ch, addr = last
+        lines.append(f"адреса 0x{addr:02X}   значення: {'мкс' if as_us else 'CRSF (172..1811, центр 992)'}")
         for i in range(8):
             a, b = ch[i], ch[i + 8]
-            lines.append(
-                f"CH{i+1:02d} {a:6d} {bar(a, 24)}    CH{i+9:02d} {b:6d} {bar(b, 24)}"
-            )
-    # курсор у кут + очистити до кінця екрана
+            va, vb = (crsf_to_us(a), crsf_to_us(b)) if as_us else (a, b)
+            lines.append(f"CH{i+1:02d} {va:5d} {bar(a)}    CH{i+9:02d} {vb:5d} {bar(b)}")
     sys.stdout.write("\x1b[H" + "\n".join(l + "\x1b[K" for l in lines) + "\n\x1b[J")
     sys.stdout.flush()
 
@@ -149,6 +158,9 @@ def main():
     ap.add_argument("port", nargs="?", help="COM-порт, напр. COM7 (за замовчуванням — автопошук)")
     ap.add_argument("--raw", action="store_true", help="друкувати кожен пакет окремим рядком")
     ap.add_argument("--list", action="store_true", help="показати COM-порти і вийти")
+    ap.add_argument("--us", action="store_true", help="показувати мікросекунди")
+    ap.add_argument("--baud", type=int, default=420000,
+                    help="швидкість (для USB VCP пульта не важлива; для USB-UART з приймачем — 420000)")
     args = ap.parse_args()
 
     if args.list:
@@ -164,7 +176,7 @@ def main():
     if os.name == "nt":
         os.system("")  # вмикає ANSI-коди в консолі Windows
 
-    ser = serial.Serial(port, 115200, timeout=0.05)
+    ser = serial.Serial(port, args.baud, timeout=0.05)
     ser.dtr = True  # деякі хости/драйвери не віддають дані без DTR
     parser = Parser()
     last = None
@@ -183,16 +195,16 @@ def main():
                 for pkt in parser.feed(data):
                     last = pkt
                     if args.raw:
-                        seq, ch, flags = pkt
-                        print(f"{time.monotonic() - t_start:8.3f}s seq={seq:3d} "
-                              + " ".join(f"{v:5d}" for v in ch))
+                        ch, _ = pkt
+                        vals = [crsf_to_us(v) for v in ch] if args.us else ch
+                        print(f"{time.monotonic() - t_start:8.3f}s " + " ".join(f"{v:5d}" for v in vals))
 
             now = time.monotonic()
             if now - window_t >= 1.0:
                 rate = (parser.ok - window_ok) / (now - window_t)
                 window_ok, window_t = parser.ok, now
             if not args.raw and now >= next_draw:
-                draw(port, parser, last, rate)
+                draw(port, parser, last, rate, args.us)
                 next_draw = now + 0.1
     except KeyboardInterrupt:
         pass
@@ -201,10 +213,9 @@ def main():
     finally:
         ser.close()
         elapsed = time.monotonic() - t_start
-        print(f"\nПідсумок за {elapsed:.1f} с: пакетів {parser.ok}, "
+        print(f"\nПідсумок за {elapsed:.1f} с: кадрів RC {parser.ok}, "
               f"середня частота {parser.ok / elapsed if elapsed else 0:.1f} Гц, "
-              f"втрачено {parser.lost}, CRC-помилок {parser.crc_errors}, "
-              f"невірна версія {parser.bad_version}")
+              f"CRC-помилок {parser.crc_errors}, інших кадрів {parser.other}")
 
 
 if __name__ == "__main__":
