@@ -12,7 +12,6 @@
 #include "edgetx.h"
 #include "crc.h"
 #include "hal/usb_driver.h"
-#include "os/time.h"
 
 const char STR_USB_RC_OUT[] = "USB RC OUT";
 
@@ -25,7 +24,11 @@ const char STR_USB_RC_OUT[] = "USB RC OUT";
 #define CRSF_CH_CENTER               992
 
 static void* _ctx = nullptr;
-static uint32_t _lastSendMs = 0;
+// Допуск: кадр можна відправити трохи раніше дедлайну, щоб тремтіння
+// запуску міксера (кілька мкс) не зсувало відправку на цілий цикл.
+#define RC_OUT_EARLY_US  500
+
+static uint32_t _nextDueUs = 0;
 
 static uint32_t toCrsf(int32_t out)
 {
@@ -70,7 +73,7 @@ void usbRcOutStart()
   params.polarity = ETX_Pol_Normal;
 
   _ctx = UsbSerialPort.uart->init(UsbSerialPort.hw_def, &params);
-  _lastSendMs = time_get_ms();
+  _nextDueUs = timersGetUsTick();
 
   // Відправляти буфер кожен USB-кадр (1 мс), а не пачками — менше джитера.
   usbSerialSetLowLatency(true);
@@ -91,9 +94,17 @@ void usbRcOutUpdate()
   void* ctx = _ctx;
   if (!ctx) return;
 
-  uint32_t now = time_get_ms();
-  if ((uint32_t)(now - _lastSendMs) < USB_RC_OUT_PERIOD_MS) return;
-  _lastSendMs = now;
+  // Розклад із фіксованим кроком: середня частота рівно 250 Гц,
+  // незалежно від того, як часто викликається міксер (1, 2 або 4 мс).
+  uint32_t now = timersGetUsTick();
+  int32_t untilDue = (int32_t)(_nextDueUs - now);
+  if (untilDue > RC_OUT_EARLY_US) return;
+
+  _nextDueUs += USB_RC_OUT_PERIOD_US;
+  if ((int32_t)(_nextDueUs - now) <= 0) {
+    // міксер працює повільніше (модуль з низькою частотою) — не "доганяємо"
+    _nextDueUs = now + USB_RC_OUT_PERIOD_US;
+  }
 
   // Якщо програма на ПК не читає порт — пропускаємо кадр, а не блокуємо
   // mixer task.
