@@ -17,20 +17,20 @@ jobs:
       matrix:
         target:
           - tx16s
-    container:
-      image: ghcr.io/edgetx/edgetx-dev:2.9.1
-      volumes:
-        - ${{ github.workspace }}:/src
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
+      # Образ 2.9 має стару glibc, тож JS-дії GitHub у ньому не працюють:
+      # репозиторій завантажуємо на хості, а збираємо в контейнері.
       - name: Build ${{ matrix.target }}
-        env:
-          FLAVOR: ${{ matrix.target }}
-        run: ./tools/build-gh.sh
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src \
+            -e FLAVOR=${{ matrix.target }} -e GITHUB_REF -e GITHUB_SHA \
+            ghcr.io/edgetx/edgetx-dev:2.9.1 \
+            bash -c 'git config --global --add safe.directory "*" && ./tools/build-gh.sh'
 
       - name: Upload ${{ matrix.target }}
         uses: actions/upload-artifact@v4
