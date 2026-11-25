@@ -1,0 +1,43 @@
+---
+# Fork-only workflow: build RadioMaster TX16S firmware (EdgeTX 2.9.4 base).
+name: Build TX16S firmware (2.9.4)
+on:
+  push:
+    branches:
+      - 'usb-rc-out-2.9.4'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - tx16s
+    container:
+      image: ghcr.io/edgetx/edgetx-dev:2.9.1
+      volumes:
+        - ${{ github.workspace }}:/src
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build ${{ matrix.target }}
+        env:
+          FLAVOR: ${{ matrix.target }}
+        run: ./tools/build-gh.sh
+
+      - name: Upload ${{ matrix.target }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.target }}-2.9.4-${{ github.sha }}
+          path: |
+            fw.json
+            *.bin
+          retention-days: 30
+          if-no-files-found: error

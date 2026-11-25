@@ -302,6 +302,14 @@ static void* usbSerialInit(void*, const etx_serial_init*)
   return (void*)1;
 }
 
+extern "C" volatile uint8_t cdcInFrameInterval;
+
+// Send buffered data on every frame (1ms) instead of batching it
+void usbSerialSetLowLatency(bool enable)
+{
+  cdcInFrameInterval = enable ? 0 : CDC_IN_FRAME_INTERVAL;
+}
+
 static const etx_serial_driver_t usbSerialDriver = {
   .init = usbSerialInit,
   .deinit = nullptr,

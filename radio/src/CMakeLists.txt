@@ -417,6 +417,7 @@ set(SRC
   sbus.cpp
   hal/module_port.cpp
   tasks/mixer_task.cpp
+  usb_rc_out.cpp
   )
 
 if(GUI)

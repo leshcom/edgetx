@@ -33,6 +33,9 @@ enum usbMode {
   USB_JOYSTICK_MODE,
   USB_MASS_STORAGE_MODE,
   USB_SERIAL_MODE,
+  // Must stay after USB_MAX_MODE value so it can only be picked from the
+  // connection popup (not stored as radio/model default).
+  USB_RC_OUT_MODE,
 #if defined(USB_SERIAL)
   USB_MAX_MODE=USB_SERIAL_MODE
 #else
@@ -57,5 +60,8 @@ EXTERN_C(int getSelectedUsbMode());
 void setSelectedUsbMode(int mode);
 
 EXTERN_C(uint32_t usbSerialFreeSpace());
+
+// Send buffered CDC data on every USB frame (1 ms) instead of batching.
+EXTERN_C(void usbSerialSetLowLatency(bool enable));
 
 extern const etx_serial_port_t UsbSerialPort;

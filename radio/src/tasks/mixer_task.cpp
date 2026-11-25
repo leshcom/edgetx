@@ -24,6 +24,7 @@
 #include "mixer_scheduler.h"
 
 #include "opentx.h"
+#include "usb_rc_out.h"
 
 RTOS_TASK_HANDLE mixerTaskId;
 RTOS_DEFINE_STACK(mixerTaskId, mixerStack, MIXER_STACK_SIZE);
@@ -204,6 +205,8 @@ TASK_FUNCTION(mixerTask)
 #if defined(STM32) && !defined(SIMU)
       if (getSelectedUsbMode() == USB_JOYSTICK_MODE) {
         usbJoystickUpdate();
+      } else if (getSelectedUsbMode() == USB_RC_OUT_MODE) {
+        usbRcOutUpdate();
       }
 #endif
 

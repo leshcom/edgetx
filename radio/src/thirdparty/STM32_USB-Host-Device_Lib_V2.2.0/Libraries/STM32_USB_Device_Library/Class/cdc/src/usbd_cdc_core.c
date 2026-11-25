@@ -710,11 +710,15 @@ uint8_t  usbd_cdc_DataOut (void *pdev, uint8_t epnum)
   * @param  epnum: endpoint number
   * @retval status
   */
+// Number of SOF frames between IN transfers; 0 = every frame (low latency).
+// Set by usbSerialSetLowLatency() (modified by EdgeTX).
+volatile uint8_t cdcInFrameInterval = CDC_IN_FRAME_INTERVAL;
+
 uint8_t  usbd_cdc_SOF (void *pdev)
 {      
   static uint8_t FrameCount = 0;    // modified by OpenTX
   
-  if (FrameCount++ >= CDC_IN_FRAME_INTERVAL)     // modified by OpenTX
+  if (FrameCount++ >= cdcInFrameInterval)     // modified by EdgeTX
   {
     /* Reset the frame counter */
     FrameCount = 0;

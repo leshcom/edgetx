@@ -21,6 +21,7 @@
 
 #include "opentx.h"
 #include "hal/adc_driver.h"
+#include "usb_rc_out.h"
 
 #if defined(LIBOPENUI)
   #include "libopenui.h"
@@ -87,6 +88,10 @@ void openUsbMenu()
     TRACE("USB serial");
     setSelectedUsbMode(USB_SERIAL_MODE);
   });
+  _usbMenu->addLine(STR_USB_RC_OUT, [] {
+    TRACE("USB RC OUT");
+    setSelectedUsbMode(USB_RC_OUT_MODE);
+  });
 #endif
 }
 
@@ -104,6 +109,9 @@ void onUSBConnectMenu(const char *result)
   else if (result == STR_USB_SERIAL) {
     setSelectedUsbMode(USB_SERIAL_MODE);
   }
+  else if (result == STR_USB_RC_OUT) {
+    setSelectedUsbMode(USB_RC_OUT_MODE);
+  }
 #endif
   else if (result == STR_EXIT) {
     _usbDisabled = true;
@@ -117,6 +125,7 @@ void openUsbMenu()
     POPUP_MENU_ADD_ITEM(STR_USB_MASS_STORAGE);
 #if defined(USB_SERIAL)
     POPUP_MENU_ADD_ITEM(STR_USB_SERIAL);
+    POPUP_MENU_ADD_ITEM(STR_USB_RC_OUT);
 #endif
     POPUP_MENU_TITLE(STR_SELECT_MODE);
     POPUP_MENU_START(onUSBConnectMenu);
@@ -168,6 +177,9 @@ void handleUsbConnection()
       else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
         serialInit(SP_VCP, serialGetMode(SP_VCP));
       }
+      else if (getSelectedUsbMode() == USB_RC_OUT_MODE) {
+        usbRcOutStart();
+      }
 #endif
 
       usbStart();
@@ -183,6 +195,8 @@ void handleUsbConnection()
       pushEvent(EVT_ENTRY);
     } else if (getSelectedUsbMode() == USB_SERIAL_MODE) {
       serialStop(SP_VCP);
+    } else if (getSelectedUsbMode() == USB_RC_OUT_MODE) {
+      usbRcOutStop();
     }
     TRACE("reset selected USB mode");
     setSelectedUsbMode(USB_UNSELECTED_MODE);
